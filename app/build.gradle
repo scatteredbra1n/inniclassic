@@ -14,6 +14,12 @@ if (localPropsFile.exists()) {
 }
 def lastFmApiKey = localProps.getProperty("lastfm.api.key", "")
 def lastFmApiSecret = localProps.getProperty("lastfm.api.secret", "")
+// MusicKit developer token (a JWT). Create a MusicKit key in the Apple Developer
+// account and sign the token yourself. Never commit the token or the .p8 private key.
+//   musickit.developer.token=eyJ...
+// A flashed device can instead store the same JWT in
+// /storage/sdcard0/.apple_music_developer_token
+def musicKitDeveloperToken = localProps.getProperty("musickit.developer.token", "")
 
 android {
     namespace 'com.themoon.y1'
@@ -33,6 +39,7 @@ android {
         multiDexEnabled true
         buildConfigField "String", "LASTFM_API_KEY", "\"${lastFmApiKey}\""
         buildConfigField "String", "LASTFM_API_SECRET", "\"${lastFmApiSecret}\""
+        buildConfigField "String", "MUSICKIT_DEVELOPER_TOKEN", "\"${musicKitDeveloperToken}\""
     }
     buildFeatures {
         buildConfig true

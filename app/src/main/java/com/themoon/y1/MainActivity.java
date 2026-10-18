@@ -604,6 +604,17 @@ public class MainActivity extends Activity {
     private List<String> foundWifiNetworks = new ArrayList<String>();
 
     private Y1WebServer webServer;
+    private boolean applePairScreen;
+    private TextView applePairStatus;
+    private final Runnable applePairRefresh = new Runnable() {
+        @Override
+        public void run() {
+            if (!applePairScreen || applePairStatus == null) return;
+            applePairStatus.setText(applePairStatusText());
+            applePairStatus.postDelayed(this, 1500);
+        }
+    };
+    private long lastApplePlaybackNotice;
     // Stable logical keys keep wheel navigation independent of Android resource IDs.
     private final android.util.SparseIntArray dynamicViewIds = new android.util.SparseIntArray();
     private int dynamicViewId(int key) {
@@ -1780,6 +1791,7 @@ public class MainActivity extends Activity {
             // 🚨 [버그 수리] 중간 저장된 캐시에 중복곡이 남아있을 수 있으니 불러오자마자 한 번 청소!
             filterDuplicateSongs(customLibrary);
             filterDuplicateSongs(audiobookLibrary);
+            mergeStoredAppleMusic();
         }
 
         // 🚀 [추가된 부분] 앱이 켜질 때(혹은 튕기고 재시작될 때) 조용히 자동 스캔을 돌려 리스트를 복구합니다!
@@ -2556,6 +2568,8 @@ public class MainActivity extends Activity {
         for (SongItem song : library) {
             // 💡 [암호키 생성] "가수 이름 + 노래 제목" (대소문자 무시, 공백 제거로 정확도 1000% 향상!)
             String key = (song.artist + "_" + song.title).toLowerCase().replaceAll("\\s", "");
+            // Apple Music copies stay beside a local file of the same song instead of replacing it.
+            if (com.themoon.y1.apple.AppleMusicSongs.isApple(song)) key = key + "\0apple";
 
             if (bestSongs.containsKey(key)) {
                 SongItem existing = bestSongs.get(key);
@@ -2885,6 +2899,7 @@ public class MainActivity extends Activity {
             o.put("genre", song.genre);
             o.put("albumArtist", song.albumArtist);
             o.put("composer", song.composer);
+            if (com.themoon.y1.apple.AppleMusicSongs.isApple(song)) o.put("source", "apple");
             Integer trackNum = trackNumberMap.get(song.file.getAbsolutePath());
             o.put("trackNum", trackNum != null ? trackNum : 0);
             arr.put(o);
@@ -2915,12 +2930,15 @@ public class MainActivity extends Activity {
             try {
                 org.json.JSONObject o = arr.getJSONObject(i);
                 File f = new File(o.getString("path"));
-                if (!f.exists())
+                boolean appleSong = "apple".equals(o.optString("source"))
+                        || com.themoon.y1.apple.AppleMusicSongs.isAppleFile(f);
+                if (!appleSong && !f.exists())
                     continue; // 🚀 그 사이 삭제된 파일은 캐시에서도 조용히 걸러냅니다
                 SongItem song = new SongItem(f, o.optString("title", f.getName()),
                         o.optString("artist", "Unknown Artist"), o.optString("album", "Unknown Album"),
                         o.optString("year", "Unknown Year"), o.optString("genre", "Unknown Genre"),
                         o.optString("albumArtist", ""), o.optString("composer", ""));
+                if (appleSong) song.source = "apple";
                 target.add(song);
                 trackNumberMap.put(f.getAbsolutePath(), o.optInt("trackNum", 0));
             } catch (Exception e) {
@@ -2952,6 +2970,7 @@ public class MainActivity extends Activity {
                 java.util.Iterator<SongItem> itMusic = customLibrary.iterator();
                 while (itMusic.hasNext()) {
                     SongItem item = itMusic.next();
+                    if (com.themoon.y1.apple.AppleMusicSongs.isApple(item)) continue;
                     if (!item.file.exists()) {
                         trackNumberMap.remove(item.file.getAbsolutePath());
                         itMusic.remove(); // 파일이 지워졌으면 장부에서 즉시 파쇄!
@@ -2990,6 +3009,7 @@ public class MainActivity extends Activity {
                 // 🚀 [신규 엔진 장착] 중복 폭탄 해체! 최고 음질 1개만 남기고 다 분쇄합니다!
                 filterDuplicateSongs(customLibrary);
                 filterDuplicateSongs(audiobookLibrary);
+                mergeStoredAppleMusic();
 
                 // 즐겨찾기 자동 청소기
                 HashSet<String> aliveSongs = new HashSet<>();
@@ -3120,6 +3140,7 @@ public class MainActivity extends Activity {
                     } catch (Exception e) {
                         continue;
                     }
+                    if (com.themoon.y1.apple.AppleMusicSongs.isApple(candidate)) continue;
                     String path = candidate.file.getAbsolutePath();
                     String lower = path.toLowerCase();
 
@@ -3727,6 +3748,172 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void mergeStoredAppleMusic() {
+        java.util.Iterator<SongItem> existing = customLibrary.iterator();
+        while (existing.hasNext()) {
+            SongItem song = existing.next();
+            if (com.themoon.y1.apple.AppleMusicSongs.isApple(song)) {
+                trackNumberMap.remove(song.file.getAbsolutePath());
+            }
+        }
+        java.util.List<SongItem> appleSongs = com.themoon.y1.apple.AppleMusicLibrary.getInstance(this).storedSongs();
+        com.themoon.y1.apple.AppleMusicSongs.mergeInto(customLibrary, appleSongs);
+        for (SongItem song : appleSongs) {
+            if (song.trackNumber > 0) trackNumberMap.put(song.file.getAbsolutePath(), song.trackNumber);
+        }
+    }
+
+    public void applyAppleMusicLibrary(boolean announce) {
+        mergeStoredAppleMusic();
+        saveLibraryCache();
+        if (applePairScreen && applePairStatus != null) applePairStatus.setText(applePairStatusText());
+        if (!announce) return;
+        Toast.makeText(this, applePairStatusText(), Toast.LENGTH_SHORT).show();
+        if (currentScreenState != STATE_BROWSER) return;
+        if (currentBrowserMode == BROWSER_VIRTUAL_SONGS || currentBrowserMode == BROWSER_RECENTLY_ADDED)
+            buildVirtualSongs();
+        else if (currentBrowserMode == BROWSER_FAVORITES) buildVirtualSongsForFavorites();
+        else if (currentBrowserMode == BROWSER_ARTISTS) buildVirtualCategories("ARTIST");
+        else if (currentBrowserMode == BROWSER_TRACK_ARTISTS) buildVirtualCategories("TRACK_ARTIST");
+        else if (currentBrowserMode == BROWSER_ALBUMS) buildVirtualCategories("ALBUM");
+        else if (currentBrowserMode == BROWSER_GENRES) buildVirtualCategories("GENRE");
+        else if (currentBrowserMode == BROWSER_YEARS) buildVirtualCategories("YEAR");
+        else if (currentBrowserMode == BROWSER_COMPOSERS) buildVirtualCategories("COMPOSER");
+    }
+
+    public void showAppleMusicPlaybackNotice() {
+        long now = System.currentTimeMillis();
+        if (now - lastApplePlaybackNotice < 2500) return;
+        lastApplePlaybackNotice = now;
+        Toast.makeText(this, t("Apple Music songs stay in the library. This player can't stream them. Play them from the pairing page on your phone."),
+                Toast.LENGTH_LONG).show();
+    }
+
+    private String applePairStatusText() {
+        com.themoon.y1.apple.AppleMusicLibrary library = com.themoon.y1.apple.AppleMusicLibrary.getInstance(this);
+        if (!library.isConfigured()) {
+            return t("Apple Music is not configured. The page explains how to add a developer token.");
+        }
+        if (library.isSyncing()) return t("Loading Apple Music library...");
+        if (library.isPaired() && library.lastError() != null && !library.lastError().isEmpty()) return library.lastError();
+        if (library.isPaired()) return library.songCount() + " " + t("Apple Music songs in the library");
+        return t("Scan the code, then sign in on your phone.");
+    }
+
+    private boolean usableLanAddress(String ip) {
+        if (ip == null) return false;
+        String[] parts = ip.split("\\.");
+        if (parts.length != 4) return false;
+        try {
+            int first = Integer.parseInt(parts[0]);
+            for (String part : parts) {
+                int value = Integer.parseInt(part);
+                if (value < 0 || value > 255) return false;
+            }
+            return first > 0 && first < 255;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+    }
+
+    private void buildAppleMusicPairingUI() {
+        currentSettingsDepth = 1;
+        applePairScreen = true;
+        if (!isServerRunning) toggleWebServer();
+
+        ViewGroup settingsGroup = (ViewGroup) layoutSettingsMode;
+        if (settingsGroup != null && settingsGroup.getChildCount() > 0
+                && settingsGroup.getChildAt(0) instanceof TextView) {
+            ((TextView) settingsGroup.getChildAt(0)).setText(t("pair apple music"));
+        }
+        containerSettingsItems.removeAllViews();
+
+        String ip = webServer == null ? "" : webServer.getLocalIpAddress();
+        if (isServerRunning && usableLanAddress(ip)) {
+            final String url = "http://" + ip + ":8080" + com.themoon.y1.apple.AppleMusicPage.PATH;
+            ImageView qr = new ImageView(this);
+            qr.setImageBitmap(com.themoon.y1.apple.QrImages.bitmap(url, 6, 2));
+            qr.setAdjustViewBounds(true);
+            float density = getResources().getDisplayMetrics().density;
+            LinearLayout.LayoutParams qrLp = new LinearLayout.LayoutParams((int) (220 * density), (int) (220 * density));
+            qrLp.gravity = Gravity.CENTER_HORIZONTAL;
+            qrLp.bottomMargin = (int) (8 * density);
+            qr.setLayoutParams(qrLp);
+            containerSettingsItems.addView(qr);
+
+            TextView urlView = new TextView(this);
+            urlView.setText(url);
+            urlView.setTextColor(ThemeManager.getTextColorPrimary());
+            urlView.setTextSize(14);
+            urlView.setGravity(Gravity.CENTER);
+            containerSettingsItems.addView(urlView);
+        } else {
+            TextView offline = new TextView(this);
+            offline.setText(t("Turn on Wi-Fi to pair Apple Music. The code is a link on this iPod, not a website."));
+            offline.setTextColor(ThemeManager.getTextColorPrimary());
+            offline.setTextSize(16);
+            offline.setPadding(8, 12, 8, 12);
+            containerSettingsItems.addView(offline);
+        }
+
+        applePairStatus = new TextView(this);
+        applePairStatus.setText(applePairStatusText());
+        applePairStatus.setTextColor(ThemeManager.getTextColorSecondary());
+        applePairStatus.setTextSize(15);
+        applePairStatus.setPadding(8, 10, 8, 10);
+        containerSettingsItems.addView(applePairStatus);
+        applePairStatus.removeCallbacks(applePairRefresh);
+        applePairStatus.postDelayed(applePairRefresh, 1500);
+
+        final com.themoon.y1.apple.AppleMusicLibrary library = com.themoon.y1.apple.AppleMusicLibrary.getInstance(this);
+        if (library.isPaired()) {
+            LinearLayout refresh = createSettingRow(t("Refresh Library"), "〉 ");
+            refresh.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    clickFeedback();
+                    library.refresh();
+                    if (applePairStatus != null) applePairStatus.setText(applePairStatusText());
+                }
+            });
+            containerSettingsItems.addView(refresh);
+
+            LinearLayout unpair = createSettingRow(t("Unpair Apple Music"), "〉 ");
+            unpair.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    clickFeedback();
+                    new AlertDialog.Builder(MainActivity.this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                            .setTitle(t("pair apple music"))
+                            .setMessage(t("Remove Apple Music songs from the library?"))
+                            .setPositiveButton(t("Unpair"), new DialogInterface.OnClickListener() {
+                                public void onClick(DialogInterface dialog, int which) {
+                                    library.unpair();
+                                    buildAppleMusicPairingUI();
+                                }
+                            })
+                            .setNegativeButton(t("Cancel"), null)
+                            .show();
+                }
+            });
+            containerSettingsItems.addView(unpair);
+        }
+
+        if (containerSettingsItems.getChildCount() > 0) {
+            containerSettingsItems.post(new Runnable() {
+                @Override
+                public void run() {
+                    for (int i = 0; i < containerSettingsItems.getChildCount(); i++) {
+                        if (containerSettingsItems.getChildAt(i).isFocusable()) {
+                            containerSettingsItems.getChildAt(i).requestFocus();
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     private void toggleWebServer() {
         if (isServerRunning) {
             if (webServer != null)
@@ -4043,6 +4230,7 @@ public class MainActivity extends Activity {
     }
 
     public void changeScreen(int state) {
+        if (state != STATE_SETTINGS) applePairScreen = false;
         // 🚀 [경로 추적 엔진] 화면이 바뀌기 직전에, 내가 어디서 출발했는지 정확하게 백미러에 기록합니다!
         if (state == STATE_PLAYER) {
             if (currentScreenState == STATE_MENU || currentScreenState == STATE_BROWSER
@@ -4199,6 +4387,7 @@ public class MainActivity extends Activity {
         for (SongItem song : customLibrary) {
             String path = song.file.getAbsolutePath();
             String lowerPath = path.toLowerCase();
+            if (com.themoon.y1.apple.AppleMusicSongs.isApple(song)) continue;
             if (path.contains("/Audiobooks") || path.contains("/Podcasts") || path.startsWith("/PODCAST_STREAM"))
                 continue;
             if (lowerPath.endsWith(".flac") || lowerPath.endsWith(".opus") || lowerPath.endsWith(".ogg"))
@@ -5885,6 +6074,13 @@ public class MainActivity extends Activity {
         }
 
         final int targetFocusIndex = lastSettingsFocusIndex;
+        applePairScreen = false;
+        applePairStatus = null;
+        ViewGroup settingsGroupForTitle = (ViewGroup) layoutSettingsMode;
+        if (settingsGroupForTitle != null && settingsGroupForTitle.getChildCount() > 0
+                && settingsGroupForTitle.getChildAt(0) instanceof TextView) {
+            ((TextView) settingsGroupForTitle.getChildAt(0)).setText(t("Settings"));
+        }
         containerSettingsItems.removeAllViews();
 
         // createCategoryHeader("━ QUICK SETTINGS ━");
@@ -6383,6 +6579,18 @@ public class MainActivity extends Activity {
             }
         });
         containerSettingsItems.addView(btnLastFmAccount);
+
+        final com.themoon.y1.apple.AppleMusicLibrary appleMusic = com.themoon.y1.apple.AppleMusicLibrary.getInstance(this);
+        LinearLayout btnAppleMusic = createSettingRow("pair apple music",
+                appleMusic.isPaired() ? t("Paired") : t("Not Paired"));
+        btnAppleMusic.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                clickFeedback();
+                buildAppleMusicPairingUI();
+            }
+        });
+        containerSettingsItems.addView(btnAppleMusic);
 
         LinearLayout btnBrightMenu = createSettingRow("Display Brightness", "〉 ");
         btnBrightMenu.setOnClickListener(new View.OnClickListener() {
@@ -9775,7 +9983,11 @@ public class MainActivity extends Activity {
             String displayTitle = song.title;
 
             // 예쁘게 포장된 제목으로 새 아이템을 만들어서 화면용 바구니에 쏙!
-            displaySongs.add(new SongItem(song.file, displayTitle, song.artist, song.album, song.year, song.genre));
+            SongItem displaySong = new SongItem(song.file, displayTitle, song.artist, song.album, song.year, song.genre,
+                    song.albumArtist, song.composer);
+            displaySong.source = song.source;
+            displaySong.trackNumber = song.trackNumber;
+            displaySongs.add(displaySong);
 
             // 실제 음악을 틀기 위한 플레이어용 주소와 인덱스는 그대로 세팅
             virtualSongList.add(song.file);

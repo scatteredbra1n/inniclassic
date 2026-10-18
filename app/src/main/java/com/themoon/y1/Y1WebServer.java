@@ -657,6 +657,32 @@ public class Y1WebServer extends Thread {
                     com.themoon.y1.managers.LastFmScrobbler.getInstance(context).setEnabled(value);
                     writeJson(os, "{\"ok\":true}");
                 }
+                else if (method.equals("GET") && (path.equals("/apple-music") || path.startsWith("/apple-music?"))) {
+                    String token = context == null ? "" : com.themoon.y1.apple.AppleMusicLibrary.getInstance(context).developerToken();
+                    String html = com.themoon.y1.apple.AppleMusicPage.html(token);
+                    os.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nConnection: close\r\n\r\n" + html).getBytes("UTF-8"));
+                }
+                else if (method.equals("GET") && path.startsWith("/api/apple-music/status")) {
+                    String json = context == null
+                            ? "{\"configured\":false,\"paired\":false,\"songCount\":0,\"syncing\":false,\"error\":\"Apple Music is not configured\"}"
+                            : com.themoon.y1.apple.AppleMusicLibrary.getInstance(context).statusJson();
+                    writeJson(os, json);
+                }
+                else if (method.equals("POST") && path.startsWith("/api/apple-music/session")) {
+                    if (context == null || !com.themoon.y1.apple.AppleMusicLibrary.getInstance(context).isConfigured()) {
+                        writeJson(os, "{\"ok\":false,\"error\":\"Apple Music is not configured\"}");
+                    } else {
+                        String body = readBody(is, contentLength);
+                        String userToken = formParam(body, "musicUserToken");
+                        com.themoon.y1.apple.AppleMusicLibrary.getInstance(context).saveUserTokenAndSync(userToken);
+                        boolean accepted = com.themoon.y1.apple.AppleMusicLibrary.getInstance(context).isPaired();
+                        writeJson(os, accepted ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Apple did not return a music-user token\"}");
+                    }
+                }
+                else if (method.equals("POST") && path.startsWith("/api/apple-music/logout")) {
+                    if (context != null) com.themoon.y1.apple.AppleMusicLibrary.getInstance(context).unpair();
+                    writeJson(os, "{\"ok\":true}");
+                }
                 else { os.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\nNot Found".getBytes("UTF-8")); }
                 os.flush();
             } catch (Exception e) {

@@ -18,6 +18,12 @@ public class SongItem {
     // 🚀 [iPod 스타일] Composers 메뉴 그룹핑용 (COMPOSER/TCOM 태그, 없으면 "Unknown Composer")
     public String composer;
 
+    // "local" for files on the SD card, "apple" for songs merged in from Apple Music.
+    // Apple Music rows keep a synthetic path under Music/.apple-music/ so the existing
+    // library filters still see them, but the file itself is not on disk.
+    public String source = "local";
+    public int trackNumber;
+
     // 🚀 [크래시 버그 수정] artist/album은 그동안 null 방어가 전혀 없었습니다 - 태그 추출이 실패해서
     // null이 들어오면, 나중에 song.artist.equals(...)나 song.album.equals(...)를 부르는 모든 곳
     // (아티스트/앨범 분류, 검색 등)에서 NullPointerException으로 런처가 죽었습니다. year/genre/

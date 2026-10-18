@@ -154,6 +154,14 @@ Last.fm requires every client to use its own API credentials, so none are shippe
    ```
 3. Build as usual (`./gradlew assembleDebug`). Without a key, the app still runs fine — scrobbling simply won't authenticate.
 
+Apple Music pairing uses the same idea. MusicKit needs a developer token JWT signed with a MusicKit key from your Apple Developer account (the `.p8` private key stays off the device and out of git). Add it to `local.properties`:
+
+```properties
+musickit.developer.token=YOUR_JWT
+```
+
+Or, on a device that is already flashed, put that same JWT by itself in `/storage/sdcard0/.apple_music_developer_token`. Without it, **Settings → pair apple music** still shows a QR code for a page on the iPod, and that page says Apple Music is not configured instead of pretending the library loaded.
+
 ## What's different from upstream JJ Launcher
 
 For anyone tracking this project against [ismileblue/y1_launcher](https://github.com/ismileblue/y1_launcher): everything in [Features](#features) above was added or substantially changed on top of JJ Launcher. Anything not mentioned there (media scanner internals, EQ, Bluetooth pairing, Wi-Fi keyboard, the custom theme engine, etc.) still works as in the original project — see upstream's documentation for that.

@@ -41,6 +41,13 @@ public class Y1WebServerTest {
             assertTrue(request(server, "POST /api/rename?old=song.mp3&new=renamed.mp3 HTTP/1.1\r\n\r\n").startsWith("HTTP/1.1 200"));
             assertTrue(request(server, "GET /api/file?path=renamed.mp3 HTTP/1.1\r\n\r\n").endsWith("abc"));
             assertTrue(request(server, "GET /missing HTTP/1.1\r\n\r\n").startsWith("HTTP/1.1 404"));
+            String pairing = request(server, "GET /apple-music HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+            assertTrue(pairing.startsWith("HTTP/1.1 200"));
+            assertTrue(pairing.contains("not configured"));
+            assertFalse(pairing.contains("developerToken"));
+            String rejected = request(server, "POST /api/apple-music/session HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 20\r\n\r\nmusicUserToken=abc");
+            assertTrue(rejected.contains("\"ok\":false"));
+            assertTrue(rejected.contains("not configured"));
         } finally {
             server.stopServer();
             server.join(3000);

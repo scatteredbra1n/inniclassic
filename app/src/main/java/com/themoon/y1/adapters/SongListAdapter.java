@@ -9,6 +9,8 @@ import android.widget.Button;
 
 import com.themoon.y1.MainActivity;
 import com.themoon.y1.ThemeManager;
+import com.themoon.y1.apple.AppleMusicSongs;
+import com.themoon.y1.apple.SourceBadge;
 import com.themoon.y1.models.SongItem;
 
 import java.util.List;
@@ -185,6 +187,8 @@ public class SongListAdapter extends BaseAdapter {
                 hasProgress = true;
             }
         }
+        bindSourceBadge(btn, song);
+
         if (!hasProgress) {
             applyDefaultFocusListener(btn, song.title, customColor);
         }
@@ -292,7 +296,14 @@ public class SongListAdapter extends BaseAdapter {
             @Override
             public void onClick(View v) {
                 MainActivity.instance.clickFeedback();
-                java.util.List<java.io.File> shuffled = new java.util.ArrayList<>(MainActivity.instance.virtualSongList);
+                java.util.List<java.io.File> shuffled = new java.util.ArrayList<>();
+                for (java.io.File file : MainActivity.instance.virtualSongList) {
+                    if (!AppleMusicSongs.isAppleFile(file)) shuffled.add(file);
+                }
+                if (shuffled.isEmpty()) {
+                    MainActivity.instance.showAppleMusicPlaybackNotice();
+                    return;
+                }
                 java.util.Collections.shuffle(shuffled);
                 com.themoon.y1.managers.AudioPlayerManager.getInstance().playTrackList(shuffled, 0);
                 MainActivity.instance.changeScreen(3);
@@ -301,6 +312,22 @@ public class SongListAdapter extends BaseAdapter {
         row.setOnLongClickListener(null);
 
         return row;
+    }
+
+    private void bindSourceBadge(android.view.View btn, SongItem song) {
+        if (!(btn instanceof android.widget.LinearLayout)) return;
+        android.widget.LinearLayout row = (android.widget.LinearLayout) btn;
+        if (row.getChildCount() < 2 || !(row.getChildAt(1) instanceof android.widget.TextView)) return;
+        android.widget.TextView title = (android.widget.TextView) row.getChildAt(1);
+        if (MainActivity.instance.currentBrowserMode == 14) {
+            title.setCompoundDrawables(null, null, null, null);
+            return;
+        }
+        int kind = AppleMusicSongs.isApple(song) ? AppleMusicSongs.APPLE : AppleMusicSongs.LOCAL;
+        android.graphics.drawable.Drawable badge = SourceBadge.get(MainActivity.instance, kind).getConstantState().newDrawable().mutate();
+        title.setCompoundDrawablesWithIntrinsicBounds(badge, null, null, null);
+        float density = MainActivity.instance.getResources().getDisplayMetrics().density;
+        title.setCompoundDrawablePadding((int) (6 * density));
     }
 
     // 🚀 [신규] 유니코드 아이콘 뷰(LinearLayout)와 순정 버튼(Button)을 모두 지원하는 하이브리드 포커스 리스너!
