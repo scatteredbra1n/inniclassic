@@ -356,5 +356,18 @@
   "Scan Complete!\nFound": "Scan Complete!\nFound",
   "channels.\nTuning to": "channels.\nTuning to",
   "No stations found.": "No stations found.",
-  "No .m3u files found in Y1_Playlists": "No .m3u files found in Y1_Playlists"
+  "No .m3u files found in Y1_Playlists": "No .m3u files found in Y1_Playlists",
+  "pair apple music": "pair apple music",
+  "Paired": "Paired",
+  "Not Paired": "Not Paired",
+  "Refresh Library": "Refresh Library",
+  "Unpair Apple Music": "Unpair Apple Music",
+  "Unpair": "Unpair",
+  "Remove Apple Music songs from the library?": "Remove Apple Music songs from the library?",
+  "Apple Music is not configured. The page explains how to add a developer token.": "Apple Music is not configured. The page explains how to add a developer token.",
+  "Loading Apple Music library...": "Loading Apple Music library...",
+  "Apple Music songs in the library": "Apple Music songs in the library",
+  "Scan the code, then sign in on your phone.": "Scan the code, then sign in on your phone.",
+  "Turn on Wi-Fi to pair Apple Music. The code is a link on this iPod, not a website.": "Turn on Wi-Fi to pair Apple Music. The code is a link on this iPod, not a website.",
+  "Apple Music songs stay in the library. This player can't stream them. Play them from the pairing page on your phone.": "Apple Music songs stay in the library. This player can't stream them. Play them from the pairing page on your phone."
 }

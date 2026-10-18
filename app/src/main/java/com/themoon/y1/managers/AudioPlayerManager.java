@@ -319,6 +319,14 @@ public class AudioPlayerManager {
         // 2. 사용자가 클릭한 원본(타겟) 노래를 미리 기억해 둡니다.
         // 만약 인덱스가 꼬여서 리스트 범위를 벗어났다면 안전하게 0번으로 고정!
         if (index < 0 || index >= newList.size()) index = 0;
+        com.themoon.y1.apple.AppleMusicSongs.PlayQueue localQueue =
+                com.themoon.y1.apple.AppleMusicSongs.localQueue(newList, index);
+        if (localQueue.targetIsApple || localQueue.files.isEmpty()) {
+            main.showAppleMusicPlaybackNotice();
+            return;
+        }
+        newList = localQueue.files;
+        index = localQueue.index;
         File targetSong = newList.get(index);
 
         // 3. 메인 화면의 재생 바구니(Playlist) 2개를 싹 비우고 새 곡들로 채웁니다.
@@ -587,6 +595,18 @@ public class AudioPlayerManager {
         com.themoon.y1.managers.LastFmScrobbler.getInstance(main).evaluateAndMaybeSubmit(getCurrentPosition());
 
         final File track = main.currentPlaylist.get(index);
+        if (com.themoon.y1.apple.AppleMusicSongs.isAppleFile(track)) {
+            main.showAppleMusicPlaybackNotice();
+            main.consecutiveErrorCount++;
+            if (main.consecutiveErrorCount >= main.currentPlaylist.size()) {
+                main.isPausedByHand = true;
+                main.updatePlayerUI();
+                main.consecutiveErrorCount = 0;
+            } else {
+                new Handler().postDelayed(() -> nextTrack(), 300);
+            }
+            return;
+        }
         main.lastAlbumArtBytes = null;
         main.currentAlbumColor = ThemeManager.getListButtonFocusedBg() | 0xFF000000;
 

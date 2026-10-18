@@ -17,6 +17,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.themoon.y1.MainActivity;
+import com.themoon.y1.apple.AppleMusicSongs;
+import com.themoon.y1.apple.SourceBadge;
 import com.themoon.y1.views.ClassicMenuStyle;
 import com.themoon.y1.R;
 import com.themoon.y1.ThemeManager;
@@ -39,6 +41,7 @@ public class CategoryListAdapter extends BaseAdapter {
     // 🚀 [ANR 수리 1] 앨범당 파일 목록도 한 번만 모아서 보관 - 예전엔 getView()가 불릴 때마다(=매 스크롤마다)
     // 전체 라이브러리를 처음부터 다시 훑었는데, 곡이 많을수록 매 행 렌더링마다 그 비용이 반복됐습니다.
     private Map<String, List<File>> albumFilesMap;
+    private final Map<String, Integer> sourceByName = new HashMap<>();
 
     public CategoryListAdapter(List<String> items, String type) {
         this.items = items;
@@ -46,6 +49,15 @@ public class CategoryListAdapter extends BaseAdapter {
 
         if (coverCache == null) {
             coverCache = new LruCache<>(50); // 최대 50개의 앨범 아트를 메모리에 안전하게 기억
+        }
+        if (MainActivity.instance != null && !MainActivity.instance.isAudiobookLibraryMode) {
+            for (SongItem song : MainActivity.customLibrary) {
+                String key = categoryKey(song);
+                if (key == null) continue;
+                int bit = AppleMusicSongs.isApple(song) ? AppleMusicSongs.APPLE : AppleMusicSongs.LOCAL;
+                Integer previous = sourceByName.get(key);
+                sourceByName.put(key, previous == null ? bit : (previous | bit));
+            }
         }
 
         if (type.equals("ALBUM")) {
@@ -183,12 +195,16 @@ public class CategoryListAdapter extends BaseAdapter {
             // 🚀 [신규 추가] 아티스트의 앨범 목록 맨 위 "전체 곡" 항목: 검정 배경 + 음표 아이콘, 전체 곡 수 표시
             tvTitle.setText(MainActivity.instance.t("All Songs"));
             int allCount = 0;
+            int allKind = 0;
             boolean isTrackArtistMode = MainActivity.instance.categoryArtistFilterIsTrackArtist;
             for (SongItem song : MainActivity.customLibrary) {
                 String matchField = isTrackArtistMode ? song.artist : song.albumArtist;
-                if (MainActivity.instance.categoryArtistFilter.equals(matchField))
-                    allCount++;
+                if (!MainActivity.instance.categoryArtistFilter.equals(matchField)) continue;
+                allCount++;
+                int bit = AppleMusicSongs.isApple(song) ? AppleMusicSongs.APPLE : AppleMusicSongs.LOCAL;
+                allKind |= bit;
             }
+            applySourceBadge(tvTitle, allKind == 0 ? null : allKind);
             tvSubtitle.setText(allCount == 1 ? t1Song() : (allCount + " " + tSongs()));
             // 🚀 [버그 수정] 포커스 리스너가 아직 한 번도 안 불렸을 때도 기본 글자색이 정확히 보이도록 항상 명시적으로 지정!
             boolean focusedNow = row.isFocused();
@@ -233,6 +249,7 @@ public class CategoryListAdapter extends BaseAdapter {
         }
 
         tvTitle.setText(name);
+        applySourceBadge(tvTitle, sourceByName.get(name));
         // 🚀 [버그 수정] 포커스 리스너가 아직 한 번도 안 불렸을 때도 기본 글자색이 정확히 보이도록 항상 명시적으로 지정!
         tvTitle.setTextColor(row.isFocused() ? ThemeManager.getListButtonFocusedTextColor() : ThemeManager.getTextColorPrimary());
         int songCount = albumSongCounts != null && albumSongCounts.containsKey(name) ? albumSongCounts.get(name) : 0;
@@ -319,6 +336,7 @@ public class CategoryListAdapter extends BaseAdapter {
         List<File> albumFiles = albumFilesMap != null ? albumFilesMap.get(name) : null;
         if (albumFiles != null) {
             for (File file : albumFiles) {
+                if (file == null || !file.exists()) continue;
                 String trackPath = file.getAbsolutePath();
 
                 // ① SharedPreferences 금고에 다운로드 경로가 등록되어 있는지 확인
@@ -475,6 +493,7 @@ public class CategoryListAdapter extends BaseAdapter {
         ClassicMenuStyle.apply(row, tvMain, tvArrow, ClassicMenuStyle.ROW_HEIGHT_DP);
         tvMain.setSelected(row.isFocused());
         tvMain.setText(name);
+        applySourceBadge(tvMain, sourceByName.get(name));
 
         // 🚀 [버그 수정] 재활용된 행이 실제로는 포커스 상태인데도 무조건 평상시 배경으로 덮어써버리던
         // 문제를 수정 - 포커스 상태를 그대로 반영합니다.
@@ -526,6 +545,27 @@ public class CategoryListAdapter extends BaseAdapter {
         });
 
         return row;
+    }
+
+    private String categoryKey(SongItem song) {
+        if (type.equals("ARTIST")) return song.albumArtist;
+        if (type.equals("TRACK_ARTIST")) return song.artist;
+        if (type.equals("ALBUM")) return song.album;
+        if (type.equals("YEAR")) return song.year;
+        if (type.equals("GENRE")) return song.genre;
+        if (type.equals("COMPOSER")) return song.composer;
+        return null;
+    }
+
+    private void applySourceBadge(TextView title, Integer kind) {
+        if (kind == null || kind == 0) {
+            title.setCompoundDrawables(null, null, null, null);
+            return;
+        }
+        Drawable badge = SourceBadge.get(MainActivity.instance, kind).getConstantState().newDrawable().mutate();
+        title.setCompoundDrawablesWithIntrinsicBounds(badge, null, null, null);
+        float density = MainActivity.instance.getResources().getDisplayMetrics().density;
+        title.setCompoundDrawablePadding((int) (6 * density));
     }
 
     private String t1Song() {
